@@ -1,0 +1,26 @@
+NEXUS — split version (professional setup)
+======================================
+
+ONE-TIME: Install Node.js
+  1. https://nodejs.org — download the LTS version (green button)
+  2. Run the installer — click Next through everything (defaults are fine)
+  3. Close ALL PowerShell windows, open a new one
+
+EVERY TIME you work on the site:
+  1. Open PowerShell
+  2. cd C:\Users\shamm\Downloads\nexus-site
+  3. First time only:  npm install
+  4. npm start
+  5. Open the http://localhost:3000 link in your browser
+  6. When done: Ctrl+C in PowerShell to stop the server
+
+Open in browser:  http://localhost:3000  (use index.html — NOT OPEN-THIS.html)
+
+Admin password (default): nexus2024admin
+
+Folder layout:
+  index.html       — entry point
+  css/styles.css   — styles
+  js/admin.js      — admin password
+  js/app.jsx       — app code
+  OPEN-THIS.html   — old single-file backup (you can ignore this)

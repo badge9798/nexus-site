@@ -1,0 +1,14 @@
+{
+  "name": "nexus-site",
+  "private": true,
+  "description": "NEXUS product discovery platform (local dev)",
+  "scripts": {
+    "build": "node scripts/bundle.js",
+    "prestart": "npm run build",
+    "start": "serve .",
+    "dev": "npm run build && serve ."
+  },
+  "devDependencies": {
+    "serve": "^14.2.4"
+  }
+}

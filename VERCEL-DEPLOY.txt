@@ -1,0 +1,11 @@
+Deploy NEXUS to Vercel
+======================
+
+1. Push this folder to GitHub (or use Vercel CLI).
+2. On vercel.com → New Project → import the repo.
+3. Framework: Other (static site). Build command: npm run build. Output: . (root)
+4. Deploy. Your site will be https://your-project.vercel.app
+
+Before deploy: Admin → Settings → Export JSON (backup your products/brands).
+
+Note: Data still lives in each visitor's browser until you add a database (Supabase, etc.) later.
