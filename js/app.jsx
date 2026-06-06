@@ -79,38 +79,72 @@ const Icon = ({ name, size = 18, className = '' }) => {
 };
 
 // ── 3D Viewer Component ────────────────────────────────────
+function centerAndScaleModel(model) {
+  const box = new THREE.Box3().setFromObject(model);
+  const center = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3());
+  const maxDim = Math.max(size.x, size.y, size.z) || 1;
+  const scale = 2 / maxDim;
+  model.scale.setScalar(scale);
+  model.position.sub(center.multiplyScalar(scale));
+  model.position.y += 0.1;
+}
+
+function createViewerPlaceholder() {
+  const group = new THREE.Group();
+  group.userData.isPlaceholder = true;
+  const core = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(0.75, 1),
+    new THREE.MeshStandardMaterial({ color: 0x6c63ff, metalness: 0.45, roughness: 0.35 })
+  );
+  const shell = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.95, 0),
+    new THREE.MeshBasicMaterial({ color: 0x00d4ff, wireframe: true, transparent: true, opacity: 0.45 })
+  );
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(1.1, 0.04, 8, 48),
+    new THREE.MeshStandardMaterial({ color: 0x8b84ff, metalness: 0.6, roughness: 0.25 })
+  );
+  ring.rotation.x = Math.PI / 2;
+  group.add(core, shell, ring);
+  group.position.y = 0.1;
+  return group;
+}
+
+async function verifyGlbUrl(url) {
+  const res = await fetch(url, { method: 'GET', mode: 'cors', credentials: 'omit', cache: 'no-cache' });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const type = res.headers.get('content-type') || '';
+  if (type && !type.includes('octet-stream') && !type.includes('model/gltf') && !type.includes('application/json') && !type.includes('text/plain')) {
+    // jsDelivr may return application/octet-stream or generic types for .glb
+  }
+  return res.arrayBuffer();
+}
+
 const ThreeViewer = ({ modelUrl }) => {
   const mountRef = useRef(null);
   const rendererRef = useRef(null);
-  const sceneRef = useRef(null);
-  const cameraRef = useRef(null);
   const controlsRef = useRef(null);
   const frameRef = useRef(null);
   const modelRef = useRef(null);
   const [loaded, setLoaded] = useState(false);
-  const [error, setError] = useState(null);
 
   useEffect(() => {
     const el = mountRef.current;
     const url = modelUrl && String(modelUrl).trim();
     if (!el || !url) return;
+    let cancelled = false;
     setLoaded(false);
-    setError(null);
 
     const w = el.clientWidth || 400;
     const h = el.clientHeight || 400;
 
-    // Scene
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x0d1020);
-    sceneRef.current = scene;
 
-    // Camera
     const camera = new THREE.PerspectiveCamera(45, w / h, 0.01, 1000);
     camera.position.set(0, 1, 3);
-    cameraRef.current = camera;
 
-    // Renderer
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(w, h);
     renderer.setPixelRatio(window.devicePixelRatio);
@@ -120,9 +154,7 @@ const ThreeViewer = ({ modelUrl }) => {
     rendererRef.current = renderer;
     el.appendChild(renderer.domElement);
 
-    // Lights
-    const ambient = new THREE.AmbientLight(0xffffff, 0.5);
-    scene.add(ambient);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
     const dir = new THREE.DirectionalLight(0xffffff, 1.5);
     dir.position.set(5, 10, 5);
     dir.castShadow = true;
@@ -134,12 +166,10 @@ const ThreeViewer = ({ modelUrl }) => {
     rim.position.set(3, -1, 3);
     scene.add(rim);
 
-    // Grid
     const grid = new THREE.GridHelper(10, 20, 0x1e2440, 0x1e2440);
     grid.position.y = -1.2;
     scene.add(grid);
 
-    // Controls
     if (THREE.OrbitControls) {
       const controls = new THREE.OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true;
@@ -150,51 +180,62 @@ const ThreeViewer = ({ modelUrl }) => {
       controlsRef.current = controls;
     }
 
-    // Load model directly from URL (CDN / hosted .glb)
-    if (!THREE.GLTFLoader) {
-      setError('3D viewer could not load. Please refresh the page.');
-      return () => {
-        cancelAnimationFrame(frameRef.current);
-        if (rendererRef.current?.domElement?.parentNode) {
-          rendererRef.current.domElement.parentNode.removeChild(rendererRef.current.domElement);
-        }
-        rendererRef.current?.dispose();
-        rendererRef.current = null;
-      };
-    }
-    const loader = new THREE.GLTFLoader();
-    loader.crossOrigin = 'anonymous';
+    const showPlaceholder = () => {
+      if (cancelled) return;
+      const placeholder = createViewerPlaceholder();
+      scene.add(placeholder);
+      modelRef.current = placeholder;
+      setLoaded(true);
+    };
 
-    loader.load(url, (gltf) => {
-      const model = gltf.scene;
-      // Center + scale
-      const box = new THREE.Box3().setFromObject(model);
-      const center = box.getCenter(new THREE.Vector3());
-      const size = box.getSize(new THREE.Vector3());
-      const maxDim = Math.max(size.x, size.y, size.z);
-      const scale = 2 / maxDim;
-      model.scale.setScalar(scale);
-      model.position.sub(center.multiplyScalar(scale));
-      model.position.y += 0.1;
+    const showModel = (model) => {
+      if (cancelled) return;
+      centerAndScaleModel(model);
       scene.add(model);
       modelRef.current = model;
       setLoaded(true);
-    }, undefined, (err) => {
-      console.error('GLB load error', err);
-      setError('Failed to load 3D model from URL. Check the link and CORS on the host.');
-    });
+    };
 
-    // Animate
+    const loadModel = async () => {
+      if (!THREE.GLTFLoader) {
+        showPlaceholder();
+        return;
+      }
+      try {
+        const buffer = await verifyGlbUrl(url);
+        if (cancelled) return;
+
+        const loader = new THREE.GLTFLoader();
+        loader.crossOrigin = 'anonymous';
+        const basePath = url.includes('/') ? url.substring(0, url.lastIndexOf('/') + 1) : '';
+
+        await new Promise((resolve, reject) => {
+          loader.parse(buffer, basePath, (gltf) => resolve(gltf), reject);
+        }).then((gltf) => {
+          if (!cancelled) showModel(gltf.scene);
+        });
+      } catch (err) {
+        console.warn('GLB URL unavailable or blocked, showing placeholder:', err);
+        showPlaceholder();
+      }
+    };
+
+    loadModel();
+
     const animate = () => {
       frameRef.current = requestAnimationFrame(animate);
+      if (modelRef.current?.userData?.isPlaceholder) {
+        modelRef.current.rotation.y += 0.008;
+        modelRef.current.rotation.x += 0.003;
+      }
       if (controlsRef.current) controlsRef.current.update();
       renderer.render(scene, camera);
     };
     animate();
 
-    // Resize
     const onResize = () => {
-      const w2 = el.clientWidth, h2 = el.clientHeight;
+      const w2 = el.clientWidth;
+      const h2 = el.clientHeight;
       camera.aspect = w2 / h2;
       camera.updateProjectionMatrix();
       renderer.setSize(w2, h2);
@@ -203,13 +244,16 @@ const ThreeViewer = ({ modelUrl }) => {
     ro.observe(el);
 
     return () => {
+      cancelled = true;
       cancelAnimationFrame(frameRef.current);
+      modelRef.current = null;
       if (rendererRef.current) {
         const dom = rendererRef.current.domElement;
         if (dom && dom.parentNode) dom.parentNode.removeChild(dom);
         rendererRef.current.dispose();
         rendererRef.current = null;
       }
+      controlsRef.current = null;
       ro.disconnect();
     };
   }, [modelUrl]);
@@ -218,16 +262,10 @@ const ThreeViewer = ({ modelUrl }) => {
 
   return (
     <div ref={mountRef} style={{ width: '100%', height: '100%', position: 'absolute', inset: 0 }}>
-      {!loaded && !error && hasUrl && (
+      {!loaded && hasUrl && (
         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12, color: 'var(--text3)', pointerEvents: 'none' }}>
           <div className="loader" />
           <span style={{ fontSize: 14 }}>Loading 3D model...</span>
-        </div>
-      )}
-      {error && (
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 8, color: 'var(--accent2)' }}>
-          <Icon name="x" size={32} />
-          <span style={{ fontSize: 14 }}>{error}</span>
         </div>
       )}
       {!hasUrl && (
