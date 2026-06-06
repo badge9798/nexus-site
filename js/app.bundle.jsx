@@ -111,14 +111,84 @@ function createViewerPlaceholder() {
   return group;
 }
 
-async function verifyGlbUrl(url) {
-  const res = await fetch(url, { method: 'GET', mode: 'cors', credentials: 'omit', cache: 'no-cache' });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const type = res.headers.get('content-type') || '';
-  if (type && !type.includes('octet-stream') && !type.includes('model/gltf') && !type.includes('application/json') && !type.includes('text/plain')) {
-    // jsDelivr may return application/octet-stream or generic types for .glb
+let dracoLoaderPromise = null;
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) {
+      resolve();
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = src;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error(`Failed to load ${src}`));
+    document.head.appendChild(script);
+  });
+}
+
+async function createGltfLoader() {
+  if (!THREE.GLTFLoader) return null;
+  if (!THREE.DRACOLoader) {
+    try {
+      if (!dracoLoaderPromise) {
+        dracoLoaderPromise = loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/DRACOLoader.js');
+      }
+      await dracoLoaderPromise;
+    } catch (_) {}
   }
+  const loader = new THREE.GLTFLoader();
+  loader.crossOrigin = 'anonymous';
+  if (THREE.DRACOLoader) {
+    const draco = new THREE.DRACOLoader();
+    draco.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/libs/draco/gltf/');
+    loader.setDRACOLoader(draco);
+  }
+  return loader;
+}
+
+function loadGltfWithLoader(loader, url) {
+  return new Promise((resolve, reject) => {
+    loader.crossOrigin = 'anonymous';
+    loader.load(url, resolve, undefined, reject);
+  });
+}
+
+function parseGltfWithLoader(loader, buffer, basePath) {
+  return new Promise((resolve, reject) => {
+    loader.crossOrigin = 'anonymous';
+    loader.parse(buffer, basePath, resolve, reject);
+  });
+}
+
+async function fetchGlbBuffer(url) {
+  const res = await fetch(url, { method: 'GET', mode: 'cors', credentials: 'omit' });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.arrayBuffer();
+}
+
+async function loadGlbModel(url) {
+  const loader = await createGltfLoader();
+  if (!loader) throw new Error('GLTFLoader unavailable');
+  const basePath = url.includes('/') ? url.substring(0, url.lastIndexOf('/') + 1) : '';
+
+  try {
+    const buffer = await fetchGlbBuffer(url);
+    if (buffer?.byteLength > 0) {
+      try {
+        return await parseGltfWithLoader(loader, buffer, basePath);
+      } catch (_) {
+        const blobUrl = URL.createObjectURL(new Blob([buffer], { type: 'model/gltf-binary' }));
+        try {
+          return await loadGltfWithLoader(loader, blobUrl);
+        } finally {
+          URL.revokeObjectURL(blobUrl);
+        }
+      }
+    }
+  } catch (_) {}
+
+  return loadGltfWithLoader(loader, url);
 }
 
 const ThreeViewer = ({ modelUrl }) => {
@@ -197,26 +267,13 @@ const ThreeViewer = ({ modelUrl }) => {
     };
 
     const loadModel = async () => {
-      if (!THREE.GLTFLoader) {
-        showPlaceholder();
-        return;
-      }
       try {
-        const buffer = await verifyGlbUrl(url);
-        if (cancelled) return;
-
-        const loader = new THREE.GLTFLoader();
-        loader.crossOrigin = 'anonymous';
-        const basePath = url.includes('/') ? url.substring(0, url.lastIndexOf('/') + 1) : '';
-
-        await new Promise((resolve, reject) => {
-          loader.parse(buffer, basePath, (gltf) => resolve(gltf), reject);
-        }).then((gltf) => {
-          if (!cancelled) showModel(gltf.scene);
-        });
+        const gltf = await loadGlbModel(url);
+        if (!cancelled && gltf?.scene) showModel(gltf.scene);
+        else if (!cancelled) showPlaceholder();
       } catch (err) {
-        console.warn('GLB URL unavailable or blocked, showing placeholder:', err);
-        showPlaceholder();
+        console.warn('GLB load failed, showing placeholder:', err);
+        if (!cancelled) showPlaceholder();
       }
     };
 
