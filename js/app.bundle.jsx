@@ -161,34 +161,51 @@ function parseGltfWithLoader(loader, buffer, basePath) {
   });
 }
 
+function normalizeGlbUrl(url) {
+  let u = String(url || '').trim();
+  if (!u || u.startsWith('data:')) return '';
+  if (!/^https?:\/\//i.test(u)) {
+    if (u.startsWith('//')) u = 'https:' + u;
+    else if (/^cdn\.jsdelivr\.net\//i.test(u)) u = 'https://' + u;
+    else if (/^gh\//i.test(u)) u = 'https://cdn.jsdelivr.net/' + u;
+    else u = 'https://' + u;
+  }
+  return u;
+}
+
 async function fetchGlbBuffer(url) {
-  const res = await fetch(url, { method: 'GET', mode: 'cors', credentials: 'omit' });
+  const res = await fetch(url, { method: 'GET', mode: 'cors', credentials: 'omit', cache: 'default' });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.arrayBuffer();
 }
 
 async function loadGlbModel(url) {
+  const normalizedUrl = normalizeGlbUrl(url);
+  if (!normalizedUrl) throw new Error('No model URL');
+
   const loader = await createGltfLoader();
   if (!loader) throw new Error('GLTFLoader unavailable');
-  const basePath = url.includes('/') ? url.substring(0, url.lastIndexOf('/') + 1) : '';
+
+  const basePath = THREE.LoaderUtils?.extractUrlBase
+    ? THREE.LoaderUtils.extractUrlBase(normalizedUrl)
+    : (normalizedUrl.includes('/') ? normalizedUrl.substring(0, normalizedUrl.lastIndexOf('/') + 1) : '');
+
+  loader.setPath(basePath);
+  loader.crossOrigin = 'anonymous';
+
+  const buffer = await fetchGlbBuffer(normalizedUrl);
+  if (!buffer?.byteLength) throw new Error('Empty GLB file');
 
   try {
-    const buffer = await fetchGlbBuffer(url);
-    if (buffer?.byteLength > 0) {
-      try {
-        return await parseGltfWithLoader(loader, buffer, basePath);
-      } catch (_) {
-        const blobUrl = URL.createObjectURL(new Blob([buffer], { type: 'model/gltf-binary' }));
-        try {
-          return await loadGltfWithLoader(loader, blobUrl);
-        } finally {
-          URL.revokeObjectURL(blobUrl);
-        }
-      }
+    return await parseGltfWithLoader(loader, buffer, basePath);
+  } catch (_) {
+    const blobUrl = URL.createObjectURL(new Blob([buffer], { type: 'model/gltf-binary' }));
+    try {
+      return await loadGltfWithLoader(loader, blobUrl);
+    } finally {
+      URL.revokeObjectURL(blobUrl);
     }
-  } catch (_) {}
-
-  return loadGltfWithLoader(loader, url);
+  }
 }
 
 const ThreeViewer = ({ modelUrl }) => {
@@ -895,9 +912,7 @@ function App() {
     notify('Brand deleted!', 'error');
   };
   const saveProduct = (data) => {
-    const modelUrl = data.modelUrl && !String(data.modelUrl).startsWith('data:')
-      ? String(data.modelUrl).trim()
-      : '';
+    const modelUrl = normalizeGlbUrl(data.modelUrl);
     const payload = NEXUS.enrichProduct({
       ...data,
       modelUrl,
@@ -1412,10 +1427,7 @@ function normalizeProductForPage(raw) {
   }
   ingredients = ingredients.map((i) => (i != null ? String(i) : '')).filter(Boolean);
 
-  let modelUrl = '';
-  if (typeof raw.modelUrl === 'string' && raw.modelUrl.trim() && !raw.modelUrl.startsWith('data:')) {
-    modelUrl = raw.modelUrl.trim();
-  }
+  const modelUrl = normalizeGlbUrl(raw.modelUrl);
 
   let updatedAt = '';
   if (raw.updatedAt) {
@@ -2484,7 +2496,7 @@ function AddProductModal({ product, brands, defaultBrandId, onClose, onSave }) {
                 <label className="form-label">3D Model URL (.glb)</label>
                 <input
                   className="form-input"
-                  type="url"
+                  type="text"
                   placeholder="https://cdn.jsdelivr.net/gh/username/nexus-assets@main/models/filename.glb"
                   value={form.modelUrl && String(form.modelUrl).startsWith('data:') ? '' : (form.modelUrl || '')}
                   onChange={e => setForm({ ...form, modelUrl: e.target.value.trim() })}
