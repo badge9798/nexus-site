@@ -161,6 +161,8 @@
   .info-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:24px;margin-bottom:20px}
   .info-card h2{font-family:var(--font);font-size:20px;font-weight:700;margin-bottom:16px}
   .info-card h2:has(svg){display:flex;align-items:center;gap:10px}
+  .info-card--center{text-align:center}
+  .info-card--center h2{display:block;text-align:center;width:100%}
   
   /* About/Contact/Help pages */
   .about-hero{background:linear-gradient(135deg,rgba(108,99,255,.1),rgba(0,212,255,.05));border:1px solid var(--border);border-radius:var(--radius);padding:60px 40px;text-align:center;margin-bottom:32px}

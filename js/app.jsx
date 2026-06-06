@@ -744,9 +744,9 @@ function HomePage({ brands, products, isAdmin, goProduct, goBrand, setModal, sit
 
         {/* About teaser */}
         <div style={{ marginBottom: 48 }}>
-          <div className="info-card fade-in-up delay-2" style={{ background: 'linear-gradient(135deg,rgba(108,99,255,.08),rgba(0,212,255,.04))', textAlign: 'center', padding: '48px 40px' }}>
+          <div className="info-card info-card--center fade-in-up delay-2" style={{ background: 'linear-gradient(135deg,rgba(108,99,255,.08),rgba(0,212,255,.04))', padding: '48px 40px' }}>
             <div style={{ fontSize: 14, color: 'var(--accent3)', fontWeight: 600, letterSpacing: 2, marginBottom: 12 }}>ABOUT NEXUS</div>
-            <h2 style={{ fontFamily: 'var(--font)', fontSize: 28, fontWeight: 800, marginBottom: 16, borderBottom: 'none', paddingBottom: 0 }}>Your Ultimate Product Discovery Hub</h2>
+            <h2 style={{ fontFamily: 'var(--font)', fontSize: 28, fontWeight: 800, marginBottom: 16, borderBottom: 'none', paddingBottom: 0, display: 'block', textAlign: 'center', width: '100%' }}>Your Ultimate Product Discovery Hub</h2>
             <p style={{ color: 'var(--text2)', maxWidth: 560, margin: '0 auto 24px', lineHeight: 1.7 }}>
               We bring thousands of products from hundreds of global brands into one stunning platform. Explore in 3D, compare specs, and buy with confidence.
             </p>
@@ -1281,9 +1281,9 @@ function HelpPage({ goHome }) {
       )}
 
       {submitted && (
-        <div className="info-card" style={{ textAlign: 'center', padding: '48px 24px' }}>
+        <div className="info-card info-card--center" style={{ padding: '48px 24px' }}>
           <div style={{ fontSize: 48, marginBottom: 16 }}>✅</div>
-          <h2 style={{ marginBottom: 12, borderBottom: 'none' }}>Thank you!</h2>
+          <h2 style={{ marginBottom: 12, borderBottom: 'none', display: 'block', textAlign: 'center', width: '100%' }}>Thank you!</h2>
           <p style={{ color: 'var(--text2)' }}>Your {tab === 'report' ? 'bug report' : 'brand suggestion'} has been received. We'll review it shortly.</p>
           <button className="btn btn-secondary" style={{ marginTop: 20 }} onClick={() => setSubmitted(false)}>Submit Another</button>
         </div>
