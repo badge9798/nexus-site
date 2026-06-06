@@ -151,8 +151,19 @@ const ThreeViewer = ({ modelUrl }) => {
     }
 
     // Load model directly from URL (CDN / hosted .glb)
+    if (!THREE.GLTFLoader) {
+      setError('3D viewer could not load. Please refresh the page.');
+      return () => {
+        cancelAnimationFrame(frameRef.current);
+        if (rendererRef.current?.domElement?.parentNode) {
+          rendererRef.current.domElement.parentNode.removeChild(rendererRef.current.domElement);
+        }
+        rendererRef.current?.dispose();
+        rendererRef.current = null;
+      };
+    }
     const loader = new THREE.GLTFLoader();
-    if (loader.setCrossOrigin) loader.setCrossOrigin('anonymous');
+    loader.crossOrigin = 'anonymous';
 
     loader.load(url, (gltf) => {
       const model = gltf.scene;
