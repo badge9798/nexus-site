@@ -174,6 +174,12 @@
     if (out.ingredients && !Array.isArray(out.ingredients)) out.ingredients = [];
     if (out.specs && typeof out.specs !== 'object') out.specs = {};
     if (out.purchaseLinks && !Array.isArray(out.purchaseLinks)) out.purchaseLinks = [];
+    if (out.modelUrl) {
+      const u = String(out.modelUrl).trim();
+      out.modelUrl = u.startsWith('data:') ? '' : u;
+    } else {
+      out.modelUrl = '';
+    }
     return out;
   }
 

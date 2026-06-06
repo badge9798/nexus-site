@@ -19,14 +19,28 @@ const LS = {
     try {
       const s = JSON.stringify(v);
       localStorage.setItem(k, s);
-      localStorage.setItem(k + '_backup', s);
+      try { localStorage.setItem(k + '_backup', s); } catch (_) {}
       return true;
     } catch (e) {
-      console.error('LS save failed (storage full?):', k, e);
+      console.error('LS save failed:', k, e);
       return false;
     }
   },
 };
+
+function loadProductsFromStorage() {
+  const list = LS.get('nexus_products', []);
+  let changed = false;
+  const cleaned = list.map((p) => {
+    if (p.modelUrl && String(p.modelUrl).startsWith('data:')) {
+      changed = true;
+      return { ...p, modelUrl: '' };
+    }
+    return p;
+  });
+  if (changed) LS.set('nexus_products', cleaned);
+  return cleaned;
+}
 
 // ── Icons (inline SVG) ─────────────────────────────────────
 const Icon = ({ name, size = 18, className = '' }) => {
@@ -65,7 +79,7 @@ const Icon = ({ name, size = 18, className = '' }) => {
 };
 
 // ── 3D Viewer Component ────────────────────────────────────
-const ThreeViewer = ({ modelUrl, modelFile }) => {
+const ThreeViewer = ({ modelUrl }) => {
   const mountRef = useRef(null);
   const rendererRef = useRef(null);
   const sceneRef = useRef(null);
@@ -78,7 +92,10 @@ const ThreeViewer = ({ modelUrl, modelFile }) => {
 
   useEffect(() => {
     const el = mountRef.current;
-    if (!el || (!modelUrl && !modelFile)) return;
+    const url = modelUrl && String(modelUrl).trim();
+    if (!el || !url) return;
+    setLoaded(false);
+    setError(null);
 
     const w = el.clientWidth || 400;
     const h = el.clientHeight || 400;
@@ -133,10 +150,10 @@ const ThreeViewer = ({ modelUrl, modelFile }) => {
       controlsRef.current = controls;
     }
 
-    // Load model
+    // Load model directly from URL (CDN / hosted .glb)
     const loader = new THREE.GLTFLoader();
-    const url = modelFile ? URL.createObjectURL(modelFile) : modelUrl;
-    
+    if (loader.setCrossOrigin) loader.setCrossOrigin('anonymous');
+
     loader.load(url, (gltf) => {
       const model = gltf.scene;
       // Center + scale
@@ -151,11 +168,9 @@ const ThreeViewer = ({ modelUrl, modelFile }) => {
       scene.add(model);
       modelRef.current = model;
       setLoaded(true);
-      if (modelFile) URL.revokeObjectURL(url);
     }, undefined, (err) => {
       console.error('GLB load error', err);
-      setError('Failed to load 3D model');
-      if (modelFile) URL.revokeObjectURL(url);
+      setError('Failed to load 3D model from URL. Check the link and CORS on the host.');
     });
 
     // Animate
@@ -186,11 +201,13 @@ const ThreeViewer = ({ modelUrl, modelFile }) => {
       }
       ro.disconnect();
     };
-  }, [modelUrl, modelFile]);
+  }, [modelUrl]);
+
+  const hasUrl = !!(modelUrl && String(modelUrl).trim());
 
   return (
     <div ref={mountRef} style={{ width: '100%', height: '100%', position: 'absolute', inset: 0 }}>
-      {!loaded && !error && (modelUrl || modelFile) && (
+      {!loaded && !error && hasUrl && (
         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12, color: 'var(--text3)', pointerEvents: 'none' }}>
           <div className="loader" />
           <span style={{ fontSize: 14 }}>Loading 3D model...</span>
@@ -202,11 +219,11 @@ const ThreeViewer = ({ modelUrl, modelFile }) => {
           <span style={{ fontSize: 14 }}>{error}</span>
         </div>
       )}
-      {(!modelUrl && !modelFile) && (
+      {!hasUrl && (
         <div className="product-3d-upload" style={{ pointerEvents: 'none' }}>
           <Icon name="cube" size={48} />
-          <span style={{ fontSize: 14, marginTop: 8 }}>No 3D model uploaded</span>
-          <span style={{ fontSize: 12, color: 'var(--text3)' }}>Upload a .glb file to view here</span>
+          <span style={{ fontSize: 14, marginTop: 8 }}>No 3D model URL set</span>
+          <span style={{ fontSize: 12, color: 'var(--text3)' }}>Add a .glb URL in the product editor</span>
         </div>
       )}
     </div>
@@ -610,7 +627,7 @@ function App() {
   // Persistent state
   const [isAdmin, setIsAdmin] = useState(() => LS.get('nexus_admin', false));
   const [brands, setBrands] = useState(() => LS.get('nexus_brands', []));
-  const [products, setProducts] = useState(() => LS.get('nexus_products', []));
+  const [products, setProducts] = useState(() => loadProductsFromStorage());
   const [siteSettings, setSiteSettings] = useState(() => LS.get('nexus_settings', {
     siteName: 'NEXUS',
     tagline: 'Discover Every Product. From Every Brand.',
@@ -651,21 +668,18 @@ function App() {
 
   // Notifications
   const [notifs, setNotifs] = useState([]);
-  const notify = (msg, type = 'success') => {
-    const id = Date.now();
+  const dismissNotif = useCallback((id) => {
+    setNotifs(n => n.filter(x => x.id !== id));
+  }, []);
+  const notify = useCallback((msg, type = 'success') => {
+    const id = Date.now() + Math.random();
     setNotifs(n => [...n, { id, msg, type }]);
-    setTimeout(() => setNotifs(n => n.filter(x => x.id !== id)), 3500);
-  };
+    setTimeout(() => dismissNotif(id), 4000);
+  }, [dismissNotif]);
 
-  useEffect(() => {
-    if (!LS.set('nexus_brands', brands)) notify('Could not save brands — storage may be full.', 'error');
-  }, [brands]);
-  useEffect(() => {
-    if (!LS.set('nexus_products', products)) notify('Could not save products — storage may be full.', 'error');
-  }, [products]);
-  useEffect(() => {
-    if (!LS.set('nexus_settings', siteSettings)) notify('Could not save settings.', 'error');
-  }, [siteSettings]);
+  useEffect(() => { LS.set('nexus_brands', brands); }, [brands]);
+  useEffect(() => { LS.set('nexus_products', products); }, [products]);
+  useEffect(() => { LS.set('nexus_settings', siteSettings); }, [siteSettings]);
   useEffect(() => { LS.set('nexus_admin', isAdmin); }, [isAdmin]);
   useEffect(() => { LS.set('nexus_wishlist', wishlist); }, [wishlist]);
   useEffect(() => { LS.set('nexus_compare', compareIds); }, [compareIds]);
@@ -761,7 +775,7 @@ function App() {
     const isNew = !data.id;
     setBrands(b => {
       const next = isNew ? [...b, payload] : b.map(x => String(x.id) === String(payload.id) ? { ...x, ...payload } : x);
-      if (!LS.set('nexus_brands', next)) notify('Brand saved in memory but not to disk — storage may be full.', 'error');
+      if (!LS.set('nexus_brands', next)) notify('Could not save brand to storage.', 'error');
       return next;
     });
     setModal(null);
@@ -775,15 +789,19 @@ function App() {
     notify('Brand deleted!', 'error');
   };
   const saveProduct = (data) => {
+    const modelUrl = data.modelUrl && !String(data.modelUrl).startsWith('data:')
+      ? String(data.modelUrl).trim()
+      : '';
     const payload = NEXUS.enrichProduct({
       ...data,
+      modelUrl,
       id: data.id || Date.now().toString(),
       updatedAt: new Date().toISOString(),
     });
     const isNew = !data.id;
     setProducts(p => {
       const next = isNew ? [...p, payload] : p.map(x => String(x.id) === String(payload.id) ? { ...x, ...payload } : x);
-      if (!LS.set('nexus_products', next)) notify('Product saved in memory but not to disk — storage may be full.', 'error');
+      if (!LS.set('nexus_products', next)) notify('Could not save product to storage.', 'error');
       return next;
     });
     if (selectedProduct && String(selectedProduct.id) === String(payload.id)) setSelectedProduct(payload);
@@ -978,7 +996,8 @@ function App() {
         <div className="notif">
           {notifs.map(n => (
             <div key={n.id} className={`notif-item ${n.type}`}>
-              {n.type === 'success' ? '✓' : '✗'} {n.msg}
+              <span>{n.type === 'success' ? '✓' : '✗'} {n.msg}</span>
+              <button type="button" className="notif-close" onClick={() => dismissNotif(n.id)} aria-label="Dismiss">✕</button>
             </div>
           ))}
         </div>
@@ -1263,12 +1282,12 @@ function BrandPage({ brand, products, isAdmin, goProduct, goCompany, setModal, d
 // ── Product Page ───────────────────────────────────────────
 function ProductPage({ product, brands, isAdmin, setModal, goCompany, goBrand, goHome, deleteProduct, siteSettings, wishlist, toggleWishlist, compareIds, toggleCompare }) {
   const brand = NEXUS.findById(brands, product?.brandId);
-  const [modelFile, setModelFile] = useState(null);
-  const fileRef = useRef();
 
   if (!product) return <div className="page"><div className="empty-state"><h3>Product not found</h3></div></div>;
 
-  const modelSrc = product.modelUrl || null;
+  const modelSrc = product.modelUrl && !String(product.modelUrl).startsWith('data:')
+    ? String(product.modelUrl).trim()
+    : null;
   const ingredients = Array.isArray(product.ingredients) ? product.ingredients : [];
 
   return (
@@ -1283,34 +1302,9 @@ function ProductPage({ product, brands, isAdmin, setModal, goCompany, goBrand, g
         {/* Left: 3D + image */}
         <div>
           <div className="product-3d" style={{ marginBottom: 16 }}>
-            <ThreeViewer modelUrl={modelSrc} modelFile={modelFile} />
-            {(modelSrc || modelFile) && (
+            <ThreeViewer modelUrl={modelSrc} />
+            {modelSrc && (
               <div className="product-3d-hint">🖱 Drag to rotate · Scroll to zoom</div>
-            )}
-            {isAdmin && (
-              <div style={{ position: 'absolute', top: 12, left: 12, display: 'flex', gap: 8 }}>
-                <button className="btn btn-secondary btn-sm" onClick={() => fileRef.current?.click()} style={{ fontSize: 12, padding: '6px 12px' }}>
-                  <Icon name="cube" size={12} /> {modelSrc || modelFile ? 'Replace' : 'Upload'} GLB
-                </button>
-                <input ref={fileRef} type="file" accept=".glb,.gltf" style={{ display: 'none' }} onChange={e => {
-                  const f = e.target.files[0];
-                  if (!f) return;
-                  const reader = new FileReader();
-                  reader.onload = ev => {
-                    const url = ev.target.result;
-                    setModal(null);
-                    // Save as data URL in product
-                    const updated = { ...product, modelUrl: url };
-                    // We'll trigger save via parent
-                    window._pendingModelUpdate = { id: product.id, modelUrl: url };
-                    setModelFile(null);
-                    // Reload to show
-                    product.modelUrl = url; // direct mutation for immediate show
-                    setModelFile(f); // show immediately
-                  };
-                  reader.readAsDataURL(f);
-                }} />
-              </div>
             )}
           </div>
           {/* Product image */}
@@ -2130,7 +2124,6 @@ function AddProductModal({ product, brands, defaultBrandId, onClose, onSave }) {
   const [imgPreview, setImgPreview] = useState(product?.imageUrl || '');
   const [tab, setTab] = useState('basic');
   const imgRef = useRef();
-  const modelRef = useRef();
   const notify = useNotif();
 
   // Set brand name when brand changes
@@ -2143,12 +2136,6 @@ function AddProductModal({ product, brands, defaultBrandId, onClose, onSave }) {
     const f = e.target.files[0]; if (!f) return;
     const reader = new FileReader();
     reader.onload = ev => { setImgPreview(ev.target.result); setForm(prev => ({ ...prev, imageUrl: ev.target.result })); };
-    reader.readAsDataURL(f);
-  };
-  const handleModel = (e) => {
-    const f = e.target.files[0]; if (!f) return;
-    const reader = new FileReader();
-    reader.onload = ev => { setForm(prev => ({ ...prev, modelUrl: ev.target.result })); };
     reader.readAsDataURL(f);
   };
   const addIngredient = () => {
@@ -2288,26 +2275,31 @@ function AddProductModal({ product, brands, defaultBrandId, onClose, onSave }) {
         {tab === '3d-model' && (
           <div className="admin-form">
             <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 20, marginBottom: 16 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
                 <Icon name="cube" size={24} />
                 <div>
-                  <div style={{ fontWeight: 600, marginBottom: 4 }}>3D Model (.glb / .gltf)</div>
-                  <div style={{ fontSize: 13, color: 'var(--text3)' }}>Upload a GLB file for interactive 3D viewing</div>
+                  <div style={{ fontWeight: 600, marginBottom: 4 }}>3D Model URL</div>
+                  <div style={{ fontSize: 13, color: 'var(--text3)' }}>Paste a direct link to a hosted .glb file</div>
                 </div>
               </div>
-              <button className="btn btn-secondary" onClick={() => modelRef.current?.click()}>
-                <Icon name="upload" size={16} /> {form.modelUrl ? 'Replace 3D Model' : 'Upload 3D Model (.glb)'}
-              </button>
-              <input ref={modelRef} type="file" accept=".glb,.gltf" style={{ display: 'none' }} onChange={handleModel} />
-              {form.modelUrl && (
-                <div style={{ marginTop: 12, padding: '8px 14px', background: 'rgba(0,255,157,.08)', border: '1px solid rgba(0,255,157,.2)', borderRadius: 8, fontSize: 13, color: 'var(--green)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                  ✓ 3D model loaded
-                  <button style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'var(--accent2)', cursor: 'pointer', fontSize: 18 }} onClick={() => setForm({ ...form, modelUrl: '' })}>×</button>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">3D Model URL (.glb)</label>
+                <input
+                  className="form-input"
+                  type="url"
+                  placeholder="https://cdn.jsdelivr.net/gh/username/nexus-assets@main/models/filename.glb"
+                  value={form.modelUrl && String(form.modelUrl).startsWith('data:') ? '' : (form.modelUrl || '')}
+                  onChange={e => setForm({ ...form, modelUrl: e.target.value.trim() })}
+                />
+              </div>
+              {form.modelUrl && !String(form.modelUrl).startsWith('data:') && (
+                <div style={{ marginTop: 12, padding: '8px 14px', background: 'rgba(0,255,157,.08)', border: '1px solid rgba(0,255,157,.2)', borderRadius: 8, fontSize: 13, color: 'var(--green)' }}>
+                  ✓ 3D model URL set
                 </div>
               )}
             </div>
             <div style={{ color: 'var(--text3)', fontSize: 13, lineHeight: 1.7 }}>
-              Tips: Keep GLB files under 20MB for best performance. The viewer supports rotation, zooming, and auto-rotation. Recommended: export from Blender as GLB with compressed textures.
+              Host your .glb on GitHub + jsDelivr, Netlify, or any CDN with CORS enabled. The viewer loads the file directly from this URL.
             </div>
           </div>
         )}
