@@ -1280,23 +1280,105 @@ function BrandPage({ brand, products, isAdmin, goProduct, goCompany, setModal, d
 }
 
 // ── Product Page ───────────────────────────────────────────
+function normalizeProductForPage(raw) {
+  if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) return null;
+
+  const specs = raw.specs && typeof raw.specs === 'object' && !Array.isArray(raw.specs) ? raw.specs : {};
+  let purchaseLinks = Array.isArray(raw.purchaseLinks) ? raw.purchaseLinks : [];
+  purchaseLinks = purchaseLinks
+    .filter((l) => l && typeof l === 'object')
+    .map((l) => ({
+      name: l.name != null ? String(l.name) : 'Store',
+      url: l.url != null ? String(l.url) : '',
+      unavailable: !!l.unavailable,
+    }));
+  if (!purchaseLinks.length) {
+    purchaseLinks = [
+      { name: 'Amazon', url: '', unavailable: false },
+      { name: 'Flipkart', url: '', unavailable: false },
+      { name: 'Official Website', url: '', unavailable: false },
+    ];
+  }
+
+  let ingredients = raw.ingredients;
+  if (!Array.isArray(ingredients)) {
+    ingredients = typeof ingredients === 'string' && ingredients.trim() ? [ingredients] : [];
+  }
+  ingredients = ingredients.map((i) => (i != null ? String(i) : '')).filter(Boolean);
+
+  let modelUrl = '';
+  if (typeof raw.modelUrl === 'string' && raw.modelUrl.trim() && !raw.modelUrl.startsWith('data:')) {
+    modelUrl = raw.modelUrl.trim();
+  }
+
+  let updatedAt = '';
+  if (raw.updatedAt) {
+    const d = new Date(raw.updatedAt);
+    updatedAt = Number.isNaN(d.getTime()) ? '' : raw.updatedAt;
+  }
+
+  return {
+    id: raw.id != null ? String(raw.id) : '',
+    name: raw.name != null ? String(raw.name) : 'Untitled Product',
+    brandId: raw.brandId != null ? String(raw.brandId) : '',
+    brandName: raw.brandName != null ? String(raw.brandName) : '',
+    price: raw.price != null ? String(raw.price) : '',
+    priceCurrency: raw.priceCurrency != null ? String(raw.priceCurrency) : '₹',
+    category: raw.category != null ? String(raw.category) : '',
+    sponsored: !!raw.sponsored,
+    description: raw.description != null ? String(raw.description) : '',
+    imageUrl: typeof raw.imageUrl === 'string' ? raw.imageUrl : '',
+    modelUrl,
+    ingredients,
+    ingredientsLabel: raw.ingredientsLabel != null ? String(raw.ingredientsLabel) : 'Ingredients / Materials',
+    specs,
+    purchaseLinks,
+    theme: raw.theme && typeof raw.theme === 'object' && !Array.isArray(raw.theme) ? raw.theme : {},
+    updatedAt,
+  };
+}
+
+class ProductSectionBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { hasError: false }; }
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(err) { console.warn('Product section error:', err); }
+  render() {
+    if (this.state.hasError) return this.props.fallback ?? null;
+    return this.props.children;
+  }
+}
+
 function ProductPage({ product, brands, isAdmin, setModal, goCompany, goBrand, goHome, deleteProduct, siteSettings, wishlist, toggleWishlist, compareIds, toggleCompare }) {
-  const brand = NEXUS.findById(brands, product?.brandId);
+  const safeProduct = normalizeProductForPage(product);
+  const brandList = Array.isArray(brands) ? brands : [];
+  const brand = safeProduct?.brandId ? NEXUS.findById(brandList, safeProduct.brandId) : null;
+  const wishlistSafe = Array.isArray(wishlist) ? wishlist : [];
+  const compareSafe = Array.isArray(compareIds) ? compareIds : [];
+  const settingsSafe = siteSettings && typeof siteSettings === 'object' ? siteSettings : {};
 
-  if (!product) return <div className="page"><div className="empty-state"><h3>Product not found</h3></div></div>;
+  if (!safeProduct) {
+    return (
+      <div className="page">
+        <div className="empty-state">
+          <h3>Product not found</h3>
+          <p style={{ color: 'var(--text2)' }}>This product data could not be loaded.</p>
+          <button type="button" className="btn btn-primary" style={{ marginTop: 16 }} onClick={goHome}>Back to Home</button>
+        </div>
+      </div>
+    );
+  }
 
-  const modelSrc = product.modelUrl && !String(product.modelUrl).startsWith('data:')
-    ? String(product.modelUrl).trim()
-    : null;
-  const ingredients = Array.isArray(product.ingredients) ? product.ingredients : [];
+  const modelSrc = safeProduct.modelUrl || null;
+  const ingredients = safeProduct.ingredients;
+  const specEntries = Object.entries(safeProduct.specs).filter(([k, v]) => k != null && v != null && String(k).trim());
 
   return (
-    <ThemeScope siteTheme={siteSettings?.theme} brandTheme={brand?.theme} productTheme={product.theme}>
+    <ThemeScope siteTheme={settingsSafe.theme} brandTheme={brand?.theme} productTheme={safeProduct.theme}>
     <div className="page">
       <div className="breadcrumb">
         <span onClick={goHome}>Home</span><span className="sep">/</span>
-        {brand && <><span onClick={() => goBrand(brand)}>{brand.name}</span><span className="sep">/</span></>}
-        <span className="current">{product.name}</span>
+        {brand?.name && <><span onClick={() => goBrand(brand)}>{brand.name}</span><span className="sep">/</span></>}
+        <span className="current">{safeProduct.name}</span>
       </div>
       <div className="product-page">
         {/* Left: 3D + image */}
@@ -1308,40 +1390,42 @@ function ProductPage({ product, brands, isAdmin, setModal, goCompany, goBrand, g
             )}
           </div>
           {/* Product image */}
-          {product.imageUrl && (
+          {safeProduct.imageUrl && (
             <div style={{ borderRadius: 'var(--radius2)', overflow: 'hidden', border: '1px solid var(--border)', marginBottom: 16 }}>
-              <img src={product.imageUrl} alt={product.name} style={{ width: '100%', maxHeight: 300, objectFit: 'cover' }} />
+              <img src={safeProduct.imageUrl} alt={safeProduct.name} style={{ width: '100%', maxHeight: 300, objectFit: 'cover' }} />
             </div>
           )}
         </div>
 
         {/* Right: details */}
         <div className="product-details">
-          {brand && (
+          {brand?.id && (
             <button className="detail-brand-link" onClick={() => goCompany(brand.id)}>
-              {brand.logoUrl && <img src={brand.logoUrl} alt={brand.name} style={{ width: 24, height: 24, borderRadius: 6, objectFit: 'cover' }} />}
+              {brand.logoUrl && <img src={brand.logoUrl} alt={brand.name || 'Brand'} style={{ width: 24, height: 24, borderRadius: 6, objectFit: 'cover' }} />}
               <Icon name="building" size={16} />
-              <span>{brand.name} — Company Details</span>
+              <span>{brand.name || 'Brand'} — Company Details</span>
               <Icon name="arrow" size={14} />
             </button>
           )}
 
           <div>
-            {brand && <div style={{ fontSize: 13, color: 'var(--accent3)', fontWeight: 600, letterSpacing: 1, marginBottom: 8 }}>{brand.name}</div>}
-            <h1 style={{ fontFamily: 'var(--font)', fontSize: 28, fontWeight: 800, marginBottom: 16 }}>{product.name}</h1>
+            {brand?.name && <div style={{ fontSize: 13, color: 'var(--accent3)', fontWeight: 600, letterSpacing: 1, marginBottom: 8 }}>{brand.name}</div>}
+            <h1 style={{ fontFamily: 'var(--font)', fontSize: 28, fontWeight: 800, marginBottom: 16 }}>{safeProduct.name}</h1>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-              {product.sponsored && <span className="chip sponsored-chip">Sponsored</span>}
-              {product.category && <span className="chip">{product.category}</span>}
-              {product.updatedAt && <span className="chip" style={{ color: 'var(--text3)' }}>Updated {new Date(product.updatedAt).toLocaleDateString()}</span>}
+              {safeProduct.sponsored && <span className="chip sponsored-chip">Sponsored</span>}
+              {safeProduct.category && <span className="chip">{safeProduct.category}</span>}
+              {safeProduct.updatedAt && <span className="chip" style={{ color: 'var(--text3)' }}>Updated {new Date(safeProduct.updatedAt).toLocaleDateString()}</span>}
             </div>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-              <button type="button" className={`btn btn-secondary btn-sm ${wishlist.includes(product.id) ? 'active' : ''}`} onClick={() => toggleWishlist(product.id)}>♥ Wishlist</button>
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => toggleCompare(product.id)} disabled={!compareIds.includes(product.id) && compareIds.length >= 4}>⇄ Compare</button>
-            </div>
-            {product.price && (
+            {safeProduct.id && (
+              <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+                <button type="button" className={`btn btn-secondary btn-sm ${wishlistSafe.includes(safeProduct.id) ? 'active' : ''}`} onClick={() => toggleWishlist(safeProduct.id)}>♥ Wishlist</button>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => toggleCompare(safeProduct.id)} disabled={!compareSafe.includes(safeProduct.id) && compareSafe.length >= 4}>⇄ Compare</button>
+              </div>
+            )}
+            {safeProduct.price && (
               <div className="price-tag">
-                <span style={{ fontSize: 14, color: 'var(--text3)' }}>{product.priceCurrency || '₹'}</span>
-                <span style={{ fontSize: 24 }}>{product.price}</span>
+                <span style={{ fontSize: 14, color: 'var(--text3)' }}>{safeProduct.priceCurrency}</span>
+                <span style={{ fontSize: 24 }}>{safeProduct.price}</span>
               </div>
             )}
           </div>
@@ -1349,48 +1433,52 @@ function ProductPage({ product, brands, isAdmin, setModal, goCompany, goBrand, g
           {/* Ingredients/Materials */}
           {ingredients.length > 0 && (
             <div className="detail-section">
-              <h3><Icon name="star" size={16} />{product.ingredientsLabel || 'Ingredients / Materials'}</h3>
+              <h3><Icon name="star" size={16} />{safeProduct.ingredientsLabel}</h3>
               <div>{ingredients.map((item, i) => <span key={i} className="ingredient-tag">{item}</span>)}</div>
             </div>
           )}
 
           {/* About product */}
-          {product.description && (
+          {safeProduct.description && (
             <div className="detail-section">
               <h3><Icon name="about" size={16} />About the Product</h3>
-              <p style={{ color: 'var(--text2)', fontSize: 14, lineHeight: 1.7 }}>{product.description}</p>
+              <p style={{ color: 'var(--text2)', fontSize: 14, lineHeight: 1.7 }}>{safeProduct.description}</p>
             </div>
           )}
 
           {/* Specs */}
-          {product.specs && Object.keys(product.specs).length > 0 && (
+          {specEntries.length > 0 && (
             <div className="detail-section">
               <h3><Icon name="guidelines" size={16} />Specifications</h3>
               <div style={{ display: 'grid', gap: 8 }}>
-                {Object.entries(product.specs).map(([k, v]) => (
+                {specEntries.map(([k, v]) => (
                   <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--border)', fontSize: 14 }}>
-                    <span style={{ color: 'var(--text3)' }}>{k}</span>
-                    <span style={{ color: 'var(--text)', fontWeight: 500 }}>{v}</span>
+                    <span style={{ color: 'var(--text3)' }}>{String(k)}</span>
+                    <span style={{ color: 'var(--text)', fontWeight: 500 }}>{String(v)}</span>
                   </div>
                 ))}
               </div>
             </div>
           )}
 
-          <PriceHistoryBlock productId={product.id} product={product} />
+          {safeProduct.id && (
+            <ProductSectionBoundary>
+              <PriceHistoryBlock productId={safeProduct.id} product={safeProduct} />
+            </ProductSectionBoundary>
+          )}
 
           {/* Purchase links */}
           <div className="detail-section">
             <h3><Icon name="external" size={16} />Where to Buy</h3>
             <div className="purchase-links">
-              {(product.purchaseLinks || [{ name: 'Amazon', url: '', unavailable: false }, { name: 'Flipkart', url: '', unavailable: false }, { name: 'Official Website', url: '', unavailable: false }]).map((link, i) => {
-                const href = NEXUS.applyAffiliateUrl(link.url, siteSettings);
+              {safeProduct.purchaseLinks.map((link, i) => {
+                const href = NEXUS.applyAffiliateUrl(link.url, settingsSafe);
                 return (
                 <a key={i} href={href || '#'} target="_blank" rel="noopener noreferrer"
                   className={`purchase-link ${link.unavailable ? 'unavailable' : ''}`}
                   onClick={e => {
                     if (!link.url || link.unavailable) e.preventDefault();
-                    else NEXUS.trackEvent('outbound_click', { productId: product.id, store: link.name });
+                    else if (safeProduct.id) NEXUS.trackEvent('outbound_click', { productId: safeProduct.id, store: link.name });
                   }}>
                   <Icon name="external" size={20} />
                   <span className="pl-name">{link.name}</span>
@@ -1400,7 +1488,11 @@ function ProductPage({ product, brands, isAdmin, setModal, goCompany, goBrand, g
             </div>
           </div>
 
-          <ProductReviews productId={product.id} isAdmin={isAdmin} />
+          {safeProduct.id && (
+            <ProductSectionBoundary>
+              <ProductReviews productId={safeProduct.id} isAdmin={isAdmin} />
+            </ProductSectionBoundary>
+          )}
 
           {/* Disclaimer */}
           <div className="disclaimer">
@@ -1410,12 +1502,12 @@ function ProductPage({ product, brands, isAdmin, setModal, goCompany, goBrand, g
           </div>
 
           {/* Admin controls */}
-          {isAdmin && (
+          {isAdmin && safeProduct.id && (
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
               <button className="btn btn-secondary" onClick={() => setModal('editProduct')}>
                 <Icon name="edit" size={16} /> Edit Product
               </button>
-              <button className="btn btn-danger" onClick={() => deleteProduct(product.id)}>
+              <button className="btn btn-danger" onClick={() => deleteProduct(safeProduct.id)}>
                 <Icon name="trash" size={16} /> Delete Product
               </button>
             </div>
