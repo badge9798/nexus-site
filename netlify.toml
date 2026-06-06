@@ -2,6 +2,10 @@
   command = "npm run build"
   publish = "."
 
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
 # SPA: all routes serve index.html (hash routing works client-side)
 [[redirects]]
   from = "/*"

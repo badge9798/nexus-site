@@ -1,14 +1,71 @@
 NEXUS on Netlify
+
 ===============
 
-Already connected to GitHub? Netlify will auto-deploy on push.
 
-Netlify site settings (if setting up manually):
+
+Push to GitHub → Netlify auto-deploys.
+
+
+
+Build settings (netlify.toml):
+
   Build command:  npm run build
-  Publish directory:  .  (root folder)
 
-Push changes to GitHub and Netlify rebuilds automatically.
+  Publish directory:  .
 
-Local test before push:
-  npm run build
-  npm start
+
+
+SECURE ADMIN PASSWORD (required for email reset)
+
+------------------------------------------------
+
+In Netlify → Site settings → Environment variables, add:
+
+
+
+  ADMIN_EMAIL          Your Gmail address (only this inbox receives codes)
+
+  GMAIL_USER           Same Gmail address (for sending)
+
+  GMAIL_APP_PASSWORD   Gmail App Password (not your normal login password)
+
+
+
+How to get a Gmail App Password:
+
+  1. Google Account → Security → 2-Step Verification (must be ON)
+
+  2. Search "App passwords" → create one for "Mail"
+
+  3. Copy the 16-character password into GMAIL_APP_PASSWORD
+
+
+
+Optional:
+
+  ADMIN_OTP_SECRET     Random string for extra OTP security
+
+
+
+After saving env vars, trigger a new deploy (Deploys → Trigger deploy).
+
+
+
+Password reset / change:
+
+  - Public "reset to default" is removed
+
+  - Codes are sent only to ADMIN_EMAIL
+
+  - Works on the live Netlify site (not plain localhost without netlify dev)
+
+
+
+Local test with functions:
+
+  npm install
+
+  npx netlify dev
+
+

@@ -1346,64 +1346,109 @@ function GuidelinesPage({ goHome }) {
 }
 
 // ── Settings Page ──────────────────────────────────────────
-function AdminPasswordForm({ notify }) {
-  const [current, setCurrent] = useState('');
+function AdminEmailCodeFields({ purpose, notify, onSuccess, submitLabel, showPasswordFields = true }) {
+  const [code, setCode] = useState('');
   const [next, setNext] = useState('');
-  const [confirm, setConfirm] = useState('');
+  const [confirmPw, setConfirmPw] = useState('');
+  const [sentMsg, setSentMsg] = useState('');
   const [err, setErr] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleChange = () => {
+  const sendCode = async () => {
     setErr('');
-    if (!checkAdminPassword(current)) {
-      setErr('Current password is incorrect.');
+    setSentMsg('');
+    setLoading(true);
+    try {
+      const result = await requestAdminEmailCode(purpose);
+      if (result.ok) {
+        setSentMsg(result.message || 'Verification code sent to owner email.');
+        notify('Verification code sent');
+      } else {
+        setErr(result.error || 'Could not send code.');
+      }
+    } catch (_) {
+      setErr('Email verification works on the live Netlify site after Gmail is configured.');
+    }
+    setLoading(false);
+  };
+
+  const handleSubmit = async () => {
+    setErr('');
+    if (!/^\d{6}$/.test(code.trim())) {
+      setErr('Enter the 6-digit code from your email.');
       return;
     }
-    if (!next.trim()) {
-      setErr('New password cannot be empty.');
-      return;
+    if (showPasswordFields) {
+      if (!next.trim()) {
+        setErr('New password cannot be empty.');
+        return;
+      }
+      if (next !== confirmPw) {
+        setErr('New passwords do not match.');
+        return;
+      }
     }
-    if (next !== confirm) {
-      setErr('New passwords do not match.');
-      return;
+    setLoading(true);
+    try {
+      const result = await verifyAdminEmailCode(code.trim(), purpose);
+      if (!result.ok) {
+        setErr(result.error || 'Incorrect verification code.');
+        setLoading(false);
+        return;
+      }
+      if (showPasswordFields) setAdminPassword(next);
+      setCode('');
+      setNext('');
+      setConfirmPw('');
+      setSentMsg('');
+      onSuccess(showPasswordFields ? next : null);
+    } catch (_) {
+      setErr('Verification failed. Use the deployed Netlify site.');
     }
-    setAdminPassword(next);
-    setCurrent('');
-    setNext('');
-    setConfirm('');
-    notify('Admin password updated!');
+    setLoading(false);
   };
 
   return (
     <div className="admin-form">
-      <p style={{ color: 'var(--text2)', fontSize: 14, marginBottom: 4 }}>
-        Change the password used for Admin Login. Stored in this browser only.
+      <p style={{ color: 'var(--text2)', fontSize: 14, marginBottom: 8 }}>
+        A verification code is sent only to the site owner&apos;s Gmail. Only you can change the admin password.
       </p>
-      <div className="form-group">
-        <label className="form-label">Current password</label>
-        <input className="form-input" type="password" value={current} onChange={e => setCurrent(e.target.value)} placeholder="Current admin password" />
+      <button type="button" className="btn btn-secondary btn-sm" onClick={sendCode} disabled={loading}>
+        {loading ? 'Sending…' : 'Send verification code to owner email'}
+      </button>
+      {sentMsg && <p style={{ color: 'var(--green)', fontSize: 13, marginTop: 10 }}>{sentMsg}</p>}
+      <div className="form-group" style={{ marginTop: 16 }}>
+        <label className="form-label">Verification code</label>
+        <input className="form-input" type="text" inputMode="numeric" maxLength={6} placeholder="6-digit code" value={code} onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} />
       </div>
-      <div className="form-row">
-        <div className="form-group">
-          <label className="form-label">New password</label>
-          <input className="form-input" type="password" value={next} onChange={e => setNext(e.target.value)} placeholder="New password" />
+      {showPasswordFields && (
+        <div className="form-row">
+          <div className="form-group">
+            <label className="form-label">New password</label>
+            <input className="form-input" type="password" value={next} onChange={e => setNext(e.target.value)} placeholder="New password" />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Confirm new password</label>
+            <input className="form-input" type="password" value={confirmPw} onChange={e => setConfirmPw(e.target.value)} placeholder="Confirm new password" onKeyDown={e => { if (e.key === 'Enter') handleSubmit(); }} />
+          </div>
         </div>
-        <div className="form-group">
-          <label className="form-label">Confirm new password</label>
-          <input className="form-input" type="password" value={confirm} onChange={e => setConfirm(e.target.value)} placeholder="Confirm new password" onKeyDown={e => { if (e.key === 'Enter') handleChange(); }} />
-        </div>
-      </div>
+      )}
       {err && <span style={{ color: 'var(--accent2)', fontSize: 13 }}>{err}</span>}
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-        <button type="button" className="btn btn-secondary" onClick={handleChange}>Update admin password</button>
-        <button type="button" className="btn btn-danger" onClick={() => {
-          if (confirm('Reset admin password to the default (nexus2024admin)?')) {
-            resetAdminPasswordToDefault();
-            setCurrent(''); setNext(''); setConfirm(''); setErr('');
-            notify('Password reset to default: nexus2024admin');
-          }
-        }}>Reset to default password</button>
-      </div>
+      <button type="button" className="btn btn-primary" style={{ marginTop: 12 }} onClick={handleSubmit} disabled={loading}>
+        {loading ? 'Verifying…' : submitLabel}
+      </button>
     </div>
+  );
+}
+
+function AdminPasswordForm({ notify }) {
+  return (
+    <AdminEmailCodeFields
+      purpose="change"
+      notify={notify}
+      submitLabel="Update admin password"
+      onSuccess={() => notify('Admin password updated!')}
+    />
   );
 }
 
@@ -1545,39 +1590,63 @@ function SettingsPage({ isAdmin, settings, saveSettings, goHome, brands, product
 function AdminLoginModal({ onClose, onSuccess }) {
   const [pass, setPass] = useState('');
   const [err, setErr] = useState('');
+  const [forgot, setForgot] = useState(false);
   const notify = useNotif();
+
+  const tryLogin = () => {
+    if (checkAdminPassword(pass)) onSuccess();
+    else setErr('Incorrect password.');
+  };
+
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
+      <div className="modal" style={{ maxWidth: 440 }} onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <h2><Icon name="admin" size={20} /> Admin Login</h2>
+          <h2><Icon name="admin" size={20} /> {forgot ? 'Reset Admin Password' : 'Admin Login'}</h2>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
-        <div style={{ textAlign: 'center', marginBottom: 24, color: 'var(--text2)', fontSize: 14 }}>
-          Enter your admin password to manage content.
-        </div>
-        <div className="admin-form">
-          <div className="form-group">
-            <label className="form-label">Password</label>
-            <input className="form-input" type="password" placeholder="Enter admin password..." value={pass} onChange={e => setPass(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') { if (checkAdminPassword(pass)) onSuccess(); else { setErr('Incorrect password.'); } } }} />
-            {err && <span style={{ color: 'var(--accent2)', fontSize: 13 }}>{err}</span>}
-          </div>
-          <button className="btn btn-primary" style={{ width: '100%' }} onClick={() => { if (checkAdminPassword(pass)) onSuccess(); else setErr('Incorrect password.'); }}>
-            Login as Admin
-          </button>
-          <p style={{ marginTop: 16, fontSize: 13, color: 'var(--text3)', lineHeight: 1.5 }}>
-            Password not working?{' '}
-            <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 8, width: '100%' }} onClick={() => {
-              resetAdminPasswordToDefault();
-              setPass('');
-              setErr('');
-              notify('Password reset. Try logging in with: nexus2024admin');
-            }}>
-              Reset password to default (nexus2024admin)
+        {!forgot ? (
+          <>
+            <div style={{ textAlign: 'center', marginBottom: 24, color: 'var(--text2)', fontSize: 14 }}>
+              Enter your admin password to manage content.
+            </div>
+            <div className="admin-form">
+              <div className="form-group">
+                <label className="form-label">Password</label>
+                <input className="form-input" type="password" placeholder="Enter admin password..." value={pass} onChange={e => setPass(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') tryLogin(); }} />
+                {err && <span style={{ color: 'var(--accent2)', fontSize: 13 }}>{err}</span>}
+              </div>
+              <button className="btn btn-primary" style={{ width: '100%' }} onClick={tryLogin}>
+                Login as Admin
+              </button>
+              <p style={{ marginTop: 16, fontSize: 13, color: 'var(--text3)', textAlign: 'center' }}>
+                Forgot password?{' '}
+                <button type="button" className="linkish" onClick={() => { setForgot(true); setErr(''); }}>Reset with email code</button>
+              </p>
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ textAlign: 'center', marginBottom: 16, color: 'var(--text2)', fontSize: 14 }}>
+              Only the site owner can reset the password. A code will be sent to your Gmail.
+            </div>
+            <AdminEmailCodeFields
+              purpose="reset"
+              notify={notify}
+              submitLabel="Set new password"
+              onSuccess={() => {
+                notify('Password updated. You can log in with your new password.');
+                setForgot(false);
+                setPass('');
+                setErr('');
+              }}
+            />
+            <button type="button" className="linkish" style={{ marginTop: 12, width: '100%' }} onClick={() => setForgot(false)}>
+              ← Back to login
             </button>
-          </p>
-        </div>
+          </>
+        )}
       </div>
     </div>
   );

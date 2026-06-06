@@ -21,10 +21,32 @@ function setAdminPassword(newPassword) {
   localStorage.setItem(ADMIN_PASS_KEY, JSON.stringify(String(newPassword)));
 }
 
-function resetAdminPasswordToDefault() {
-  localStorage.removeItem(ADMIN_PASS_KEY);
-}
-
 function checkAdminPassword(password) {
   return password === getAdminPassword();
+}
+
+async function requestAdminEmailCode(purpose) {
+  const res = await fetch('/.netlify/functions/admin-send-code', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ purpose: purpose || 'reset' }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    return { ok: false, error: data.error || 'Could not send verification code.' };
+  }
+  return data;
+}
+
+async function verifyAdminEmailCode(code, purpose) {
+  const res = await fetch('/.netlify/functions/admin-verify-code', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code, purpose: purpose || 'reset' }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    return { ok: false, error: data.error || 'Verification failed.' };
+  }
+  return data;
 }

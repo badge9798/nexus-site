@@ -9,7 +9,7 @@ Files:
   js/admin.js     — admin password storage and checks
   js/app.jsx      — React app (admin login + change password in Settings)
 
-Default admin password: nexus2024admin
+Admin password: set on first login. Change or reset only via verification code sent to owner Gmail (see NETLIFY-DEPLOY.txt).
 
 To change the admin password:
   1. Log in via sidebar → Admin Login
