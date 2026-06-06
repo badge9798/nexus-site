@@ -1,0 +1,14 @@
+NEXUS on Netlify
+===============
+
+Already connected to GitHub? Netlify will auto-deploy on push.
+
+Netlify site settings (if setting up manually):
+  Build command:  npm run build
+  Publish directory:  .  (root folder)
+
+Push changes to GitHub and Netlify rebuilds automatically.
+
+Local test before push:
+  npm run build
+  npm start

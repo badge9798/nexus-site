@@ -1,0 +1,7 @@
+node_modules
+.git
+scripts
+START.txt
+START-WEBSITE.bat
+NETLIFY-DEPLOY.txt
+package-lock.json

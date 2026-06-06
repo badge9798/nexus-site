@@ -367,7 +367,7 @@ function AdminAnalyticsPanel() {
   return (
     <div className="info-card" style={{ marginTop: 24 }}>
       <h2><Icon name="guidelines" size={20} />Analytics (this browser)</h2>
-      <p style={{ color: 'var(--text2)', fontSize: 14, marginBottom: 12 }}>Connect Google Analytics or Plausible on Vercel later. Until then, basic events are logged locally.</p>
+      <p style={{ color: 'var(--text2)', fontSize: 14, marginBottom: 12 }}>Connect Google Analytics or Plausible on Netlify later. Until then, basic events are logged locally.</p>
       <div className="analytics-grid">
         {Object.entries(summary.counts).map(([k, v]) => (
           <div key={k} className="company-stat"><div className="cs-val">{v}</div><div className="cs-label">{k}</div></div>

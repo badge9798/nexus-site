@@ -586,7 +586,7 @@ function AdminAnalyticsPanel() {
   return (
     <div className="info-card" style={{ marginTop: 24 }}>
       <h2><Icon name="guidelines" size={20} />Analytics (this browser)</h2>
-      <p style={{ color: 'var(--text2)', fontSize: 14, marginBottom: 12 }}>Connect Google Analytics or Plausible on Vercel later. Until then, basic events are logged locally.</p>
+      <p style={{ color: 'var(--text2)', fontSize: 14, marginBottom: 12 }}>Connect Google Analytics or Plausible on Netlify later. Until then, basic events are logged locally.</p>
       <div className="analytics-grid">
         {Object.entries(summary.counts).map(([k, v]) => (
           <div key={k} className="company-stat"><div className="cs-val">{v}</div><div className="cs-label">{k}</div></div>
@@ -775,11 +775,11 @@ function App() {
     notify('Brand deleted!', 'error');
   };
   const saveProduct = (data) => {
-    const payload = NEXUS.enrichProduct(NEXUS.sanitizeForStorage({
+    const payload = NEXUS.enrichProduct({
       ...data,
       id: data.id || Date.now().toString(),
       updatedAt: new Date().toISOString(),
-    }));
+    });
     const isNew = !data.id;
     setProducts(p => {
       const next = isNew ? [...p, payload] : p.map(x => String(x.id) === String(payload.id) ? { ...x, ...payload } : x);
@@ -1279,10 +1279,6 @@ function ProductPage({ product, brands, isAdmin, setModal, goCompany, goBrand, g
         {brand && <><span onClick={() => goBrand(brand)}>{brand.name}</span><span className="sep">/</span></>}
         <span className="current">{product.name}</span>
       </div>
-      {product._modelTooLarge && (
-        <div className="disclaimer" style={{ marginBottom: 16 }}>3D model was too large to save permanently. Re-upload a smaller .glb file in admin mode.</div>
-      )}
-
       <div className="product-page">
         {/* Left: 3D + image */}
         <div>
@@ -1856,7 +1852,9 @@ function SettingsPage({ isAdmin, settings, saveSettings, goHome, brands, product
               </div>
               <input type="file" accept="image/*" className="form-input" onChange={e => {
                 const f = e.target.files[0]; if (!f) return;
-                NEXUS.compressImageFile(f).then(url => setForm({ ...form, logoUrl: url })).catch(() => notify('Logo upload failed', 'error'));
+                const reader = new FileReader();
+                reader.onload = ev => setForm({ ...form, logoUrl: ev.target.result });
+                reader.readAsDataURL(f);
               }} />
             </div>
           </div>
@@ -1924,7 +1922,7 @@ function SettingsPage({ isAdmin, settings, saveSettings, goHome, brands, product
 
       <div className="info-card" style={{ marginTop: 24 }}>
         <h2><Icon name="upload" size={20} />Export backup</h2>
-        <p style={{ color: 'var(--text2)', fontSize: 14, marginBottom: 12 }}>Download all brands, products, settings, and analytics as JSON before deploying to Vercel.</p>
+        <p style={{ color: 'var(--text2)', fontSize: 14, marginBottom: 12 }}>Download all brands, products, settings, and analytics as JSON before deploying updates.</p>
         <button type="button" className="btn btn-primary" onClick={exportData}>Export JSON</button>
       </div>
     </div>
@@ -1983,10 +1981,9 @@ function AddBrandModal({ brand, onClose, onSave }) {
   const handleLogo = (e) => {
     const f = e.target.files[0];
     if (!f) return;
-    NEXUS.compressImageFile(f).then(url => {
-      setLogoPreview(url);
-      setForm(prev => ({ ...prev, logoUrl: url }));
-    }).catch(() => notify('Logo upload failed', 'error'));
+    const reader = new FileReader();
+    reader.onload = ev => { setLogoPreview(ev.target.result); setForm(prev => ({ ...prev, logoUrl: ev.target.result })); };
+    reader.readAsDataURL(f);
   };
 
   const handleSave = () => {
@@ -2075,14 +2072,12 @@ function AddProductModal({ product, brands, defaultBrandId, onClose, onSave }) {
 
   const handleImage = (e) => {
     const f = e.target.files[0]; if (!f) return;
-    NEXUS.compressImageFile(f).then(url => {
-      setImgPreview(url);
-      setForm(prev => ({ ...prev, imageUrl: url }));
-    }).catch(() => notify('Image upload failed', 'error'));
+    const reader = new FileReader();
+    reader.onload = ev => { setImgPreview(ev.target.result); setForm(prev => ({ ...prev, imageUrl: ev.target.result })); };
+    reader.readAsDataURL(f);
   };
   const handleModel = (e) => {
     const f = e.target.files[0]; if (!f) return;
-    if (f.size > 1500000) { notify('3D file too large — use under 1.5MB or product may not save after refresh.', 'error'); return; }
     const reader = new FileReader();
     reader.onload = ev => { setForm(prev => ({ ...prev, modelUrl: ev.target.result })); };
     reader.readAsDataURL(f);

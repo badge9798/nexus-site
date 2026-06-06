@@ -200,48 +200,6 @@
     return style;
   }
 
-  function sanitizeForStorage(item) {
-    const copy = { ...item };
-    if (copy.modelUrl && copy.modelUrl.length > 400000) {
-      copy.modelUrl = '';
-      copy._modelTooLarge = true;
-    }
-    return copy;
-  }
-
-  function compressImageDataUrl(dataUrl, maxW, quality) {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => {
-        let w = img.width;
-        let h = img.height;
-        const max = maxW || 900;
-        if (w > max) {
-          h = Math.round((h * max) / w);
-          w = max;
-        }
-        const canvas = document.createElement('canvas');
-        canvas.width = w;
-        canvas.height = h;
-        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-        resolve(canvas.toDataURL('image/jpeg', quality || 0.78));
-      };
-      img.onerror = reject;
-      img.src = dataUrl;
-    });
-  }
-
-  function compressImageFile(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        compressImageDataUrl(e.target.result).then(resolve).catch(reject);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  }
-
   global.NEXUS = {
     CATEGORIES,
     trackEvent,
@@ -266,8 +224,5 @@
     THEME_KEYS,
     mergeTheme,
     themeToCssVars,
-    sanitizeForStorage,
-    compressImageFile,
-    compressImageDataUrl,
   };
 })(window);

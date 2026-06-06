@@ -1,0 +1,9 @@
+[build]
+  command = "npm run build"
+  publish = "."
+
+# SPA: all routes serve index.html (hash routing works client-side)
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
