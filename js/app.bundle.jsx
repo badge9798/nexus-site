@@ -579,7 +579,7 @@ function ComparePage({ products, compareIds, goProduct, clearCompare }) {
               <tbody>
                 <tr><td>Brand</td>{items.map(p => <td key={p.id}>{p.brandName || '—'}</td>)}</tr>
                 <tr><td>Category</td>{items.map(p => <td key={p.id}>{p.category || '—'}</td>)}</tr>
-                <tr><td>Price</td>{items.map(p => <td key={p.id}>{p.price ? `${p.priceCurrency || '₹'} ${p.price}` : '—'}</td>)}</tr>
+                <tr><td>Price</td>{items.map(p => <td key={p.id}>{p.price ? `${p.priceCurrency || '$'} ${p.price}` : '—'}</td>)}</tr>
                 <tr><td>Rating</td>{items.map(p => <td key={p.id}>{NEXUS.avgRating(p.id) ? `${NEXUS.avgRating(p.id).toFixed(1)} ★` : '—'}</td>)}</tr>
                 {specKeys.map(k => (
                   <tr key={k}><td>{k}</td>{items.map(p => <td key={p.id}>{(p.specs || {})[k] || '—'}</td>)}</tr>
@@ -658,7 +658,7 @@ function PriceHistoryBlock({ productId, product }) {
       <h3><Icon name="guidelines" size={16} />Price history</h3>
       <ul className="price-history-list">
         {history.slice().reverse().slice(0, 8).map((h, i) => (
-          <li key={i}><span>{new Date(h.at).toLocaleDateString()}</span><span>{h.currency || '₹'} {h.price}</span></li>
+          <li key={i}><span>{new Date(h.at).toLocaleDateString()}</span><span>{h.currency || '$'} {h.price}</span></li>
         ))}
       </ul>
     </div>
@@ -1312,7 +1312,7 @@ function ProductCard({ product, isAdmin, onClick, onDelete, delay = 0, wishliste
         <div className="product-name">{product.name || 'Unnamed Product'}</div>
         {rating && <div style={{ fontSize: 12, color: 'var(--gold)', marginBottom: 6 }}>{rating.toFixed(1)} ★</div>}
         {product.price
-          ? <div className="product-price">{product.priceCurrency || '₹'} {product.price}</div>
+          ? <div className="product-price">{product.priceCurrency || '$'} {product.price}</div>
           : <div className="no-price">Price not set</div>
         }
       </div>
@@ -1441,7 +1441,7 @@ function normalizeProductForPage(raw) {
     brandId: raw.brandId != null ? String(raw.brandId) : '',
     brandName: raw.brandName != null ? String(raw.brandName) : '',
     price: raw.price != null ? String(raw.price) : '',
-    priceCurrency: raw.priceCurrency != null ? String(raw.priceCurrency) : '₹',
+    priceCurrency: raw.priceCurrency != null ? String(raw.priceCurrency) : '$',
     category: raw.category != null ? String(raw.category) : '',
     sponsored: !!raw.sponsored,
     description: raw.description != null ? String(raw.description) : '',
@@ -2178,6 +2178,23 @@ function SettingsPage({ isAdmin, settings, saveSettings, goHome, brands, product
   );
 }
 
+// ── Modal overlay (click-outside only when press starts on backdrop) ──
+function ModalOverlay({ onClose, children }) {
+  const downOnOverlay = useRef(false);
+  return (
+    <div
+      className="modal-overlay"
+      onMouseDown={(e) => { downOnOverlay.current = e.target === e.currentTarget; }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget && downOnOverlay.current) onClose();
+        downOnOverlay.current = false;
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
 // ── Admin Login Modal ──────────────────────────────────────
 function AdminLoginModal({ onClose, onSuccess }) {
   const [pass, setPass] = useState('');
@@ -2191,7 +2208,7 @@ function AdminLoginModal({ onClose, onSuccess }) {
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <ModalOverlay onClose={onClose}>
       <div className="modal" style={{ maxWidth: 440 }} onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <h2><Icon name="admin" size={20} /> {forgot ? 'Reset Admin Password' : 'Admin Login'}</h2>
@@ -2240,7 +2257,7 @@ function AdminLoginModal({ onClose, onSuccess }) {
           </>
         )}
       </div>
-    </div>
+    </ModalOverlay>
   );
 }
 
@@ -2265,7 +2282,7 @@ function AddBrandModal({ brand, onClose, onSave }) {
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <ModalOverlay onClose={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <h2>{brand ? 'Edit Brand' : 'Add New Brand'}</h2>
@@ -2310,14 +2327,14 @@ function AddBrandModal({ brand, onClose, onSave }) {
           </div>
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }
 
 // ── Add/Edit Product Modal ─────────────────────────────────
 function AddProductModal({ product, brands, defaultBrandId, onClose, onSave }) {
   const [form, setForm] = useState(product || {
-    name: '', brandId: defaultBrandId || '', price: '', priceCurrency: '₹',
+    name: '', brandId: defaultBrandId || '', price: '', priceCurrency: '$',
     category: 'Other', sponsored: false,
     description: '', imageUrl: '', modelUrl: '',
     ingredients: [], ingredientsLabel: 'Ingredients / Materials',
@@ -2372,7 +2389,7 @@ function AddProductModal({ product, brands, defaultBrandId, onClose, onSave }) {
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <ModalOverlay onClose={onClose}>
       <div className="modal" style={{ maxWidth: 680 }} onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <h2>{product ? 'Edit Product' : 'Add New Product'}</h2>
@@ -2408,7 +2425,7 @@ function AddProductModal({ product, brands, defaultBrandId, onClose, onSave }) {
               </div>
               <div className="form-group">
                 <label className="form-label">Currency Symbol</label>
-                <input className="form-input" placeholder="₹ / $ / €" value={form.priceCurrency || '₹'} onChange={e => setForm({ ...form, priceCurrency: e.target.value })} />
+                <input className="form-input" placeholder="$ / € / ₹" value={form.priceCurrency || '$'} onChange={e => setForm({ ...form, priceCurrency: e.target.value })} />
               </div>
             </div>
             <div className="form-row">
@@ -2553,7 +2570,7 @@ function AddProductModal({ product, brands, defaultBrandId, onClose, onSave }) {
           <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }
 
@@ -2572,7 +2589,7 @@ function EditCompanyModal({ brand, onClose, onSave }) {
     website: brand.website || '',
   });
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <ModalOverlay onClose={onClose}>
       <div className="modal" style={{ maxWidth: 620 }} onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <h2>Edit Company: {brand.name}</h2>
@@ -2600,7 +2617,7 @@ function EditCompanyModal({ brand, onClose, onSave }) {
           </div>
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }
 

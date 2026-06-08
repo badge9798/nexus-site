@@ -220,7 +220,7 @@ function ComparePage({ products, compareIds, goProduct, clearCompare }) {
               <tbody>
                 <tr><td>Brand</td>{items.map(p => <td key={p.id}>{p.brandName || '—'}</td>)}</tr>
                 <tr><td>Category</td>{items.map(p => <td key={p.id}>{p.category || '—'}</td>)}</tr>
-                <tr><td>Price</td>{items.map(p => <td key={p.id}>{p.price ? `${p.priceCurrency || '₹'} ${p.price}` : '—'}</td>)}</tr>
+                <tr><td>Price</td>{items.map(p => <td key={p.id}>{p.price ? `${p.priceCurrency || '$'} ${p.price}` : '—'}</td>)}</tr>
                 <tr><td>Rating</td>{items.map(p => <td key={p.id}>{NEXUS.avgRating(p.id) ? `${NEXUS.avgRating(p.id).toFixed(1)} ★` : '—'}</td>)}</tr>
                 {specKeys.map(k => (
                   <tr key={k}><td>{k}</td>{items.map(p => <td key={p.id}>{(p.specs || {})[k] || '—'}</td>)}</tr>
@@ -299,7 +299,7 @@ function PriceHistoryBlock({ productId, product }) {
       <h3><Icon name="guidelines" size={16} />Price history</h3>
       <ul className="price-history-list">
         {history.slice().reverse().slice(0, 8).map((h, i) => (
-          <li key={i}><span>{new Date(h.at).toLocaleDateString()}</span><span>{h.currency || '₹'} {h.price}</span></li>
+          <li key={i}><span>{new Date(h.at).toLocaleDateString()}</span><span>{h.currency || '$'} {h.price}</span></li>
         ))}
       </ul>
     </div>
