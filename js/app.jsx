@@ -42,6 +42,35 @@ function loadProductsFromStorage() {
   return cleaned;
 }
 
+// Load brands from Supabase or fallback to localStorage
+async function loadBrands() {
+  if (window.NEXUS_SUPABASE?.isConfigured()) {
+    const brands = await window.NEXUS_SUPABASE.fetchBrands();
+    if (brands !== null) return brands;
+  }
+  return LS.get('nexus_brands', []);
+}
+
+// Load products from Supabase or fallback to localStorage
+async function loadProducts() {
+  if (window.NEXUS_SUPABASE?.isConfigured()) {
+    const products = await window.NEXUS_SUPABASE.fetchProducts();
+    if (products !== null) {
+      // Clean data URLs from products
+      let changed = false;
+      const cleaned = products.map((p) => {
+        if (p.modelUrl && String(p.modelUrl).startsWith('data:')) {
+          changed = true;
+          return { ...p, modelUrl: '' };
+        }
+        return p;
+      });
+      return cleaned;
+    }
+  }
+  return loadProductsFromStorage();
+}
+
 // ── Icons (inline SVG) ─────────────────────────────────────
 const Icon = ({ name, size = 18, className = '' }) => {
   const icons = {
@@ -361,8 +390,21 @@ const useNotif = () => React.useContext(NotifContext);
 function App() {
   // Persistent state
   const [isAdmin, setIsAdmin] = useState(() => LS.get('nexus_admin', false));
-  const [brands, setBrands] = useState(() => LS.get('nexus_brands', []));
-  const [products, setProducts] = useState(() => loadProductsFromStorage());
+  const [brands, setBrands] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [dataLoaded, setDataLoaded] = useState(false);
+
+  // Load data from Supabase or localStorage on mount
+  useEffect(() => {
+    const loadData = async () => {
+      const loadedBrands = await loadBrands();
+      const loadedProducts = await loadProducts();
+      setBrands(loadedBrands);
+      setProducts(loadedProducts);
+      setDataLoaded(true);
+    };
+    loadData();
+  }, []);
   const [siteSettings, setSiteSettings] = useState(() => LS.get('nexus_settings', {
     siteName: 'NEXUS',
     tagline: 'Discover Every Product. From Every Brand.',
@@ -412,8 +454,25 @@ function App() {
     setTimeout(() => dismissNotif(id), 4000);
   }, [dismissNotif]);
 
-  useEffect(() => { LS.set('nexus_brands', brands); }, [brands]);
-  useEffect(() => { LS.set('nexus_products', products); }, [products]);
+  useEffect(() => {
+    // Save to localStorage as backup
+    LS.set('nexus_brands', brands);
+    // Save to Supabase if configured
+    if (window.NEXUS_SUPABASE?.isConfigured() && dataLoaded) {
+      // We don't auto-save all brands to Supabase on every change
+      // Individual saves are handled in saveBrand function
+    }
+  }, [brands, dataLoaded]);
+
+  useEffect(() => {
+    // Save to localStorage as backup
+    LS.set('nexus_products', products);
+    // Save to Supabase if configured
+    if (window.NEXUS_SUPABASE?.isConfigured() && dataLoaded) {
+      // We don't auto-save all products to Supabase on every change
+      // Individual saves are handled in saveProduct function
+    }
+  }, [products, dataLoaded]);
   useEffect(() => { LS.set('nexus_settings', siteSettings); }, [siteSettings]);
   useEffect(() => { LS.set('nexus_admin', isAdmin); }, [isAdmin]);
   useEffect(() => { LS.set('nexus_wishlist', wishlist); }, [wishlist]);
@@ -505,25 +564,51 @@ function App() {
   }, [searchQ, products, searchFilters]);
 
   // Save brands/products
-  const saveBrand = (data) => {
+  const saveBrand = async (data) => {
     const payload = { ...data, id: data.id || Date.now().toString() };
     const isNew = !data.id;
+
+    // Try to save to Supabase first
+    let supabaseSuccess = false;
+    if (window.NEXUS_SUPABASE?.isConfigured()) {
+      supabaseSuccess = await window.NEXUS_SUPABASE.saveBrand(payload);
+    }
+
+    // Always update local state
     setBrands(b => {
       const next = isNew ? [...b, payload] : b.map(x => String(x.id) === String(payload.id) ? { ...x, ...payload } : x);
       if (!LS.set('nexus_brands', next)) notify('Could not save brand to storage.', 'error');
       return next;
     });
+
+    if (!supabaseSuccess && window.NEXUS_SUPABASE?.isConfigured()) {
+      notify('Brand saved locally but not to Supabase. Check console for errors.', 'error');
+    }
+
     setModal(null);
     notify(isNew ? 'Brand added!' : 'Brand updated!');
   };
-  const deleteBrand = (id) => {
+  const deleteBrand = async (id) => {
     if (!confirm('Delete this brand and all its products?')) return;
+
+    // Try to delete from Supabase first
+    let supabaseSuccess = false;
+    if (window.NEXUS_SUPABASE?.isConfigured()) {
+      supabaseSuccess = await window.NEXUS_SUPABASE.deleteBrand(id);
+    }
+
+    // Always update local state
     setBrands(b => b.filter(x => x.id !== id));
     setProducts(p => p.filter(x => x.brandId !== id));
     if (selectedBrand?.id === id) goHome();
-    notify('Brand deleted!', 'error');
+
+    if (!supabaseSuccess && window.NEXUS_SUPABASE?.isConfigured()) {
+      notify('Brand deleted locally but not from Supabase. Check console for errors.', 'error');
+    } else {
+      notify('Brand deleted!', 'error');
+    }
   };
-  const saveProduct = (data) => {
+  const saveProduct = async (data) => {
     const modelUrl = normalizeGlbUrl(data.modelUrl);
     const payload = NEXUS.enrichProduct({
       ...data,
@@ -532,22 +617,49 @@ function App() {
       updatedAt: new Date().toISOString(),
     });
     const isNew = !data.id;
+
+    // Try to save to Supabase first
+    let supabaseSuccess = false;
+    if (window.NEXUS_SUPABASE?.isConfigured()) {
+      supabaseSuccess = await window.NEXUS_SUPABASE.saveProduct(payload);
+    }
+
+    // Always update local state
     setProducts(p => {
       const next = isNew ? [...p, payload] : p.map(x => String(x.id) === String(payload.id) ? { ...x, ...payload } : x);
       if (!LS.set('nexus_products', next)) notify('Could not save product to storage.', 'error');
       return next;
     });
+
     if (selectedProduct && String(selectedProduct.id) === String(payload.id)) setSelectedProduct(payload);
     if (payload.price) NEXUS.recordPrice(payload.id, payload.price, payload.priceCurrency);
+
+    if (!supabaseSuccess && window.NEXUS_SUPABASE?.isConfigured()) {
+      notify('Product saved locally but not to Supabase. Check console for errors.', 'error');
+    }
+
     setModal(null);
     notify(isNew ? 'Product added!' : 'Product saved!');
     if (isNew) setTimeout(() => goProduct(payload), 50);
   };
-  const deleteProduct = (id) => {
+  const deleteProduct = async (id) => {
     if (!confirm('Delete this product?')) return;
+
+    // Try to delete from Supabase first
+    let supabaseSuccess = false;
+    if (window.NEXUS_SUPABASE?.isConfigured()) {
+      supabaseSuccess = await window.NEXUS_SUPABASE.deleteProduct(id);
+    }
+
+    // Always update local state
     setProducts(p => p.filter(x => x.id !== id));
     if (selectedProduct?.id === id) goHome();
-    notify('Product deleted!', 'error');
+
+    if (!supabaseSuccess && window.NEXUS_SUPABASE?.isConfigured()) {
+      notify('Product deleted locally but not from Supabase. Check console for errors.', 'error');
+    } else {
+      notify('Product deleted!', 'error');
+    }
   };
 
   // Get fresh product (after edits)
@@ -561,6 +673,16 @@ function App() {
     : null;
 
   const brandProducts = (brandId) => products.filter(p => p.brandId === brandId);
+
+  // Show loading state while data is being loaded
+  if (!dataLoaded) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', flexDirection: 'column', gap: 20 }}>
+        <div className="loader" style={{ width: 40, height: 40, borderWidth: 3 }} />
+        <div style={{ color: 'var(--text2)', fontSize: 16 }}>Loading NEXUS...</div>
+      </div>
+    );
+  }
 
   return (
     <NotifContext.Provider value={notify}>
@@ -1945,17 +2067,32 @@ function AddBrandModal({ brand, onClose, onSave }) {
 
 // ── Add/Edit Product Modal ─────────────────────────────────
 function AddProductModal({ product, brands, defaultBrandId, onClose, onSave }) {
-  const [form, setForm] = useState(product || {
-    name: '', brandId: defaultBrandId || '', price: '', priceCurrency: '$',
-    category: 'Other', sponsored: false,
-    description: '', imageUrl: '', modelUrl: '',
-    ingredients: [], ingredientsLabel: 'Ingredients / Materials',
-    purchaseLinks: [
-      { name: 'Amazon', url: '', unavailable: false },
-      { name: 'Flipkart', url: '', unavailable: false },
-      { name: 'Official Website', url: '', unavailable: false },
-    ],
-    specs: {},
+  const [form, setForm] = useState(() => {
+    if (product) {
+      return {
+        ...product,
+        ingredients: Array.isArray(product.ingredients) ? product.ingredients : [],
+        specs: (product.specs && typeof product.specs === 'object' && !Array.isArray(product.specs)) ? product.specs : {},
+        ingredientsLabel: product.ingredientsLabel || 'Ingredients / Materials',
+        purchaseLinks: Array.isArray(product.purchaseLinks) && product.purchaseLinks.length > 0 ? product.purchaseLinks : [
+          { name: 'Amazon', url: '', unavailable: false },
+          { name: 'Flipkart', url: '', unavailable: false },
+          { name: 'Official Website', url: '', unavailable: false },
+        ],
+      };
+    }
+    return {
+      name: '', brandId: defaultBrandId || '', price: '', priceCurrency: '$',
+      category: 'Other', sponsored: false,
+      description: '', imageUrl: '', modelUrl: '',
+      ingredients: [], ingredientsLabel: 'Ingredients / Materials',
+      purchaseLinks: [
+        { name: 'Amazon', url: '', unavailable: false },
+        { name: 'Flipkart', url: '', unavailable: false },
+        { name: 'Official Website', url: '', unavailable: false },
+      ],
+      specs: {},
+    };
   });
   const [ingInput, setIngInput] = useState('');
   const [specKey, setSpecKey] = useState('');
